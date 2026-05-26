@@ -1,0 +1,865 @@
+
+-- =====================================================
+-- PROJECT OVERVIEW
+-- =====================================================
+
+/*
+PROJECT TITLE:
+YouTube Analytics Data Warehouse & Business Intelligence Project
+
+PROJECT OVERVIEW:
+This project is designed to simulate a real-world YouTube Analytics
+Data Warehouse using SQL. The project covers complete Business
+Intelligence workflows from Data Cleaning to Advanced SQL Analytics.
+
+The main objective of this project is to analyze YouTube trending
+video performance, audience engagement, channel growth, category
+performance, and strategic business KPIs.
+
+The project is divided into 4 major phases:
+
+PHASE 1:
+Data Cleaning & SQL Foundation
+
+PHASE 2:
+Business Analytics & KPI Reporting
+
+PHASE 3:
+Advanced SQL Analytics Engineering
+
+PHASE 4:
+Senior-Level Strategic BI Reporting
+
+KEY SKILLS USED:
+- Data Cleaning
+- NULL Handling
+- IFNULL / COALESCE
+- CASE Statements
+- JOIN Operations
+- Aggregate Functions
+- GROUP BY / HAVING
+- Window Functions
+- CTE & Recursive CTE
+- LAG / LEAD
+- DENSE_RANK
+- NTILE
+- Views
+- CTAS Tables
+- Indexing
+- EXPLAIN PLAN
+- Stored Procedures
+- Triggers
+- Business Intelligence Reporting
+- Executive Dashboard Analytics
+
+BUSINESS OBJECTIVES:
+1. Identify high-performing videos and channels
+2. Analyze engagement and audience behavior
+3. Detect viral trends and growth patterns
+4. Build KPI dashboards for executives
+5. Optimize SQL query performance
+6. Create scalable analytics architecture
+
+REAL-WORLD USE CASES:
+- YouTube Business Intelligence
+- Content Strategy Optimization
+- Audience Engagement Analytics
+- Revenue Forecasting
+- Trend Intelligence
+- Executive Reporting
+*/
+
+
+CREATE DATABASE yt_analytics_dw;
+
+USE yt_analytics_dw;
+
+-- =====================================================
+-- YOUTUBE ANALYTICS DATA WAREHOUSE PROJECT
+-- BASIC TO ADVANCED SQL PROJECT
+-- =====================================================
+
+-- =====================================================
+-- 1. CATEGORY TABLE
+-- =====================================================
+
+CREATE TABLE dim_categories (
+    category_id INT,
+    category_name VARCHAR(255)
+);
+
+-- =====================================================
+-- 2. CHANNEL TABLE
+-- =====================================================
+
+CREATE TABLE dim_channels (
+    channel_id VARCHAR(50),
+    channel_title VARCHAR(255)
+);
+
+-- =====================================================
+-- 3. VIDEO TABLE
+-- =====================================================
+
+CREATE TABLE dim_videos (
+    video_id VARCHAR(50),
+    title TEXT,
+    publish_time VARCHAR(50),
+    description LONGTEXT,
+    tags LONGTEXT,
+    category_id INT,
+    channel_id VARCHAR(50)
+);
+
+-- =====================================================
+-- 4. TRENDING FACT TABLE
+-- =====================================================
+
+CREATE TABLE fact_trending_stats (
+    stat_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    video_id VARCHAR(50),
+    trending_date VARCHAR(20),
+    views BIGINT,
+    likes BIGINT,
+    dislikes BIGINT,
+    comments BIGINT
+);
+
+-- =====================================================
+-- PHASE 1 — DATA CLEANING & SQL FOUNDATION
+-- =====================================================
+
+-- Q1 Detect NULL Values
+
+SELECT
+    SUM(CASE WHEN title IS NULL THEN 1 ELSE 0 END) AS null_titles,
+    SUM(CASE WHEN video_id IS NULL THEN 1 ELSE 0 END) AS null_video_ids
+FROM dim_videos;
+
+-- Q2 Replace NULL Values Using IFNULL
+
+SELECT
+    video_id,
+    IFNULL(comments,0) AS comments
+FROM fact_trending_stats;
+
+-- Q3 Detect Duplicate Videos
+
+SELECT
+    video_id,
+    COUNT(*) AS duplicate_count
+FROM dim_videos
+GROUP BY video_id
+HAVING COUNT(*) > 1;
+
+-- Q4 Remove Duplicate Records Using ROW_NUMBER
+
+WITH duplicate_cte AS (
+
+    SELECT *,
+           ROW_NUMBER() OVER(
+               PARTITION BY video_id
+               ORDER BY video_id
+           ) AS rn
+
+    FROM dim_videos
+)
+
+SELECT *
+FROM duplicate_cte
+WHERE rn > 1;
+
+-- Q5 Standardize Channel Names
+
+SET SQL_SAFE_UPDATES = 0;
+
+UPDATE dim_channels
+SET channel_title = TRIM(UPPER(channel_title));
+
+-- Q6 Convert Publish Time into DATETIME
+
+SELECT
+    STR_TO_DATE(
+        publish_time,
+        '%Y-%m-%dT%H:%i:%sZ'
+    ) AS publish_datetime
+FROM dim_videos;
+
+-- Q7 Detect Invalid Metrics
+
+SELECT *
+FROM fact_trending_stats
+WHERE views < 0
+OR likes < 0
+OR comments < 0;
+
+-- Q8 Create Analytics VIEW
+
+CREATE VIEW vw_clean_youtube_data AS
+
+SELECT
+    v.video_id,
+    v.title,
+    c.channel_title,
+    cat.category_name,
+    f.views,
+    f.likes,
+    f.comments,
+    f.trending_date
+
+FROM fact_trending_stats f
+JOIN dim_videos v
+ON f.video_id = v.video_id
+JOIN dim_channels c
+ON v.channel_id = c.channel_id
+JOIN dim_categories cat
+ON v.category_id = cat.category_id;
+
+SELECT * FROM yt_analytics_dw.vw_clean_youtube_data;
+
+
+-- Q9 Detect Orphan Records
+
+SELECT 
+	f.video_id
+FROM fact_trending_stats f
+LEFT JOIN dim_videos v
+ON f.video_id = v.video_id
+WHERE v.video_id IS NULL;
+
+
+-- Q10 Video Performance Classification
+
+SELECT
+    title,
+    views,
+
+    CASE
+        WHEN views > 5000000 THEN 'Viral'
+        WHEN views > 1000000 THEN 'Trending'
+        ELSE 'Normal'
+    END AS performance_type
+
+FROM vw_clean_youtube_data;
+
+-- =====================================================
+-- PHASE 2 — BUSINESS ANALYTICS & KPI REPORTING
+-- =====================================================
+
+-- Q11 Top 10 Most Viewed Videos
+
+SELECT
+    title,
+    SUM(views) AS total_views
+FROM vw_clean_youtube_data
+GROUP BY title
+ORDER BY total_views DESC
+LIMIT 10;
+
+-- Q12 Top Channels by Total Views
+
+SELECT
+    channel_title,
+    SUM(views) AS total_views
+FROM vw_clean_youtube_data
+GROUP BY channel_title
+ORDER BY total_views DESC;
+
+-- Q13 Category Wise Market Share
+
+SELECT
+    category_name,
+
+    ROUND(
+        SUM(views) * 100 /
+        SUM(SUM(views)) OVER(),
+        2
+    ) AS market_share_percent
+
+FROM vw_clean_youtube_data
+GROUP BY category_name;
+
+-- Q14 KPI Dashboard Metrics
+
+SELECT
+    COUNT(DISTINCT video_id) AS total_videos,
+    SUM(views) AS total_views,
+    SUM(likes) AS total_likes,
+    SUM(comments) AS total_comments
+FROM vw_clean_youtube_data;
+
+-- Q15 Engagement Rate Analysis
+
+SELECT
+    title,
+
+    ROUND(
+        ((likes + comments) * 100.0 / views),
+        2
+    ) AS engagement_rate
+
+FROM vw_clean_youtube_data;
+
+-- Q16 Monthly Trending Analysis
+
+SELECT
+    YEAR(STR_TO_DATE(trending_date,'%y.%d.%m')) AS year_no,
+
+    MONTH(
+        STR_TO_DATE(trending_date,'%y.%d.%m')
+    ) AS month_no,
+
+    COUNT(*) AS total_trending_videos
+
+FROM vw_clean_youtube_data
+
+GROUP BY
+YEAR(STR_TO_DATE(trending_date,'%y.%d.%m')),
+MONTH(STR_TO_DATE(trending_date,'%y.%d.%m'));
+
+-- Q17 Revenue Estimation Analysis
+
+SELECT
+    title,
+    views,
+
+    ROUND(
+        (views/1000)*3,
+        2
+    ) AS estimated_revenue
+
+FROM vw_clean_youtube_data;
+
+-- Q18 High Performing Categories Using Subquery
+
+SELECT
+    category_name,
+    AVG(views) AS avg_views
+
+FROM vw_clean_youtube_data
+
+GROUP BY category_name
+
+HAVING AVG(views) >
+(
+    SELECT AVG(views)
+    FROM vw_clean_youtube_data
+);
+
+-- Q19 Top Engagement Channels
+
+SELECT
+    channel_title,
+    SUM(likes + comments) AS total_engagement
+
+FROM vw_clean_youtube_data
+
+GROUP BY channel_title
+ORDER BY total_engagement DESC;
+
+-- Q20 Executive Monthly Trend Report
+
+SELECT
+    MONTH(
+        STR_TO_DATE(trending_date,'%y.%d.%m')
+    ) AS month_no,
+
+    SUM(views) AS total_views
+
+FROM vw_clean_youtube_data
+
+GROUP BY MONTH(
+    STR_TO_DATE(trending_date,'%y.%d.%m')
+);
+
+-- =====================================================
+-- PHASE 3 — ADVANCED SQL ANALYTICS ENGINEERING
+-- =====================================================
+
+-- Q21 Rank Videos Using DENSE_RANK
+
+SELECT
+    title,
+    views,
+
+    DENSE_RANK()
+    OVER(
+        ORDER BY views DESC
+    ) AS ranking
+
+FROM vw_clean_youtube_data;
+
+-- Q22 Running Total of Views
+
+SELECT
+    trending_date,
+
+    SUM(views) AS daily_views,
+
+    SUM(SUM(views))
+    OVER(
+        ORDER BY trending_date
+    ) AS running_total
+
+FROM vw_clean_youtube_data
+
+GROUP BY trending_date;
+
+-- Q23 Moving Average Analytics
+
+SELECT
+    trending_date,
+
+    AVG(views)
+    OVER(
+        ORDER BY trending_date
+        ROWS BETWEEN 6 PRECEDING
+        AND CURRENT ROW
+    ) AS moving_avg
+
+FROM vw_clean_youtube_data;
+
+-- Q24 Compare Previous Day Views Using LAG
+
+SELECT
+    trending_date,
+
+    SUM(views) AS current_views,
+
+    LAG(SUM(views))
+    OVER(
+        ORDER BY trending_date
+    ) AS previous_views
+
+FROM vw_clean_youtube_data
+
+GROUP BY trending_date;
+
+-- Q25 Forecast Next Day Views Using LEAD
+
+SELECT
+    trending_date,
+
+    SUM(views) AS current_views,
+
+    LEAD(SUM(views))
+    OVER(
+        ORDER BY trending_date
+    ) AS next_day_views
+
+FROM vw_clean_youtube_data
+
+GROUP BY trending_date;
+
+-- Q26 Segment Videos Using NTILE
+
+SELECT
+    title,
+    views,
+
+    NTILE(4)
+    OVER(
+        ORDER BY views DESC
+    ) AS performance_quartile
+
+FROM vw_clean_youtube_data;
+
+-- Q27 FIRST_VALUE and LAST_VALUE Analysis
+
+SELECT
+    title,
+    trending_date,
+    views,
+
+    FIRST_VALUE(views)
+    OVER(
+        PARTITION BY title
+        ORDER BY trending_date
+    ) AS first_views,
+
+    LAST_VALUE(views)
+    OVER(
+        PARTITION BY title
+        ORDER BY trending_date
+        ROWS BETWEEN UNBOUNDED PRECEDING
+        AND UNBOUNDED FOLLOWING
+    ) AS latest_views
+
+FROM vw_clean_youtube_data;
+
+-- Q28 Recursive CTE Date Generator
+
+WITH RECURSIVE dates AS (
+
+    SELECT DATE('2025-01-01') AS dt
+
+    UNION ALL
+
+    SELECT DATE_ADD(dt, INTERVAL 1 DAY)
+    FROM dates
+    WHERE dt < '2025-01-10'
+)
+
+SELECT *
+FROM dates;
+
+-- Q29 Create INDEX for Query Optimization
+
+CREATE INDEX idx_video_id
+ON fact_trending_stats(video_id);
+
+SHOW INDEX
+FROM fact_trending_stats;
+
+-- Q30 Analyze Query Performance Using EXPLAIN
+
+EXPLAIN
+SELECT *
+FROM fact_trending_stats
+WHERE video_id = 'abc123';
+
+-- =====================================================
+-- PHASE 4 — SENIOR SQL BUSINESS INTELLIGENCE
+-- =====================================================
+
+-- Q31 Detect Viral Videos
+
+SELECT
+    title,
+    views,
+    likes,
+    comments
+
+FROM vw_clean_youtube_data
+
+WHERE views > 5000000
+AND likes > 200000;
+
+-- Q32 Correlated Subquery Analysis
+
+SELECT
+    title,
+    views
+
+FROM vw_clean_youtube_data v1
+
+WHERE views >
+(
+    SELECT AVG(views)
+    FROM vw_clean_youtube_data v2
+    WHERE v1.category_name = v2.category_name
+);
+
+-- Q33 Trend Drop Detection
+
+WITH trend_cte AS (
+
+    SELECT
+        title,
+        trending_date,
+        views,
+
+        LAG(views)
+        OVER(
+            PARTITION BY title
+            ORDER BY trending_date
+        ) AS previous_views
+
+    FROM vw_clean_youtube_data
+)
+
+SELECT
+    title,
+    trending_date,
+    previous_views,
+    views,
+
+    (previous_views - views) AS drop_amount
+
+FROM trend_cte
+
+WHERE previous_views IS NOT NULL
+AND views < previous_views
+
+ORDER BY drop_amount DESC;
+
+-- Q34 Monthly Growth Intelligence
+
+WITH growth_cte AS (
+
+    SELECT
+
+        MONTH(
+            STR_TO_DATE(
+                trending_date,
+                '%y.%d.%m'
+            )
+        ) AS month_no,
+
+        SUM(views) AS monthly_views,
+
+        LAG(SUM(views))
+        OVER(
+            ORDER BY MONTH(
+                STR_TO_DATE(
+                    trending_date,
+                    '%y.%d.%m'
+                )
+            )
+        ) AS previous_month_views
+
+    FROM vw_clean_youtube_data
+
+    GROUP BY MONTH(
+        STR_TO_DATE(
+            trending_date,
+            '%y.%d.%m'
+        )
+    )
+)
+
+SELECT *,
+ROUND(
+    ((monthly_views - previous_month_views)
+    / previous_month_views) * 100,
+    2
+) AS growth_rate
+
+FROM growth_cte;
+
+-- Q35 Executive Dashboard VIEW
+
+CREATE VIEW vw_executive_dashboard AS
+
+SELECT
+    category_name,
+
+    COUNT(DISTINCT video_id) AS total_videos,
+
+    SUM(views) AS total_views,
+
+    AVG(likes) AS avg_likes,
+
+    AVG(comments) AS avg_comments
+
+FROM vw_clean_youtube_data
+
+GROUP BY category_name;
+
+SELECT * FROM yt_analytics_dw.vw_executive_dashboard;
+
+-- Q36 Funnel Analytics
+
+SELECT
+    SUM(views) AS total_views,
+    SUM(likes) AS total_likes,
+    SUM(comments) AS total_comments
+
+FROM vw_clean_youtube_data;
+
+-- Q37 Executive Pivot Report
+
+SELECT
+    category_name,
+
+    SUM(
+        CASE
+            WHEN MONTH(
+                STR_TO_DATE(
+                    trending_date,
+                    '%y.%d.%m'
+                )
+            ) = 1
+            THEN views
+            ELSE 0
+        END
+    ) AS Jan_Views,
+
+    SUM(
+        CASE
+            WHEN MONTH(
+                STR_TO_DATE(
+                    trending_date,
+                    '%y.%d.%m'
+                )
+            ) = 2
+            THEN views
+            ELSE 0
+        END
+    ) AS Feb_Views,
+
+    SUM(views) AS Total_Views
+
+FROM vw_clean_youtube_data
+
+GROUP BY category_name;
+
+-- Q38 Create CTAS Table
+
+CREATE TABLE top_channel_summary AS
+
+SELECT
+    channel_title,
+    SUM(views) AS total_views
+
+FROM vw_clean_youtube_data
+
+GROUP BY channel_title;
+
+SELECT * FROM yt_analytics_dw.top_channel_summary;
+
+-- Q39 Stored Procedure for Top Videos
+
+DELIMITER //
+
+CREATE PROCEDURE top_videos()
+BEGIN
+
+    SELECT
+        title,
+        SUM(views) AS total_views
+
+    FROM vw_clean_youtube_data
+
+    GROUP BY title
+
+    ORDER BY total_views DESC
+    LIMIT 10;
+
+END //
+
+DELIMITER ;
+
+-- Execute Procedure
+
+CALL top_videos();
+
+-- Q40 Trigger for Audit Logging
+
+CREATE TABLE audit_log (
+
+    audit_id INT AUTO_INCREMENT PRIMARY KEY,
+    action_type VARCHAR(100),
+    action_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
+);
+
+DELIMITER //
+
+CREATE TRIGGER trg_video_insert
+
+AFTER INSERT
+ON dim_videos
+
+FOR EACH ROW
+
+BEGIN
+
+    INSERT INTO audit_log(action_type)
+    VALUES('NEW VIDEO INSERTED');
+
+END //
+
+DELIMITER ;
+
+INSERT INTO dim_videos (
+
+    video_id,
+    title,
+    publish_time,
+    description,
+    tags,
+    category_id,
+    channel_id
+
+)
+
+VALUES (
+
+    'v102',
+    'Advanced SQL',
+    '2025-01-01T10:00:00Z',
+    'SQL Learning',
+    'sql,data',
+    1,
+    'c101'
+
+);
+
+SELECT *
+FROM audit_log;
+-- =====================================================
+-- END OF PROJECT
+-- =====================================================
+
+
+-- =====================================================
+-- FINAL BUSINESS INSIGHTS
+-- =====================================================
+
+/*
+1. Viral videos generate significantly higher engagement rates,
+which indicates that audience interaction directly impacts visibility.
+
+2. Entertainment and Music categories dominate overall market share,
+making them the strongest revenue-driving segments.
+
+3. Channels with consistent trending appearances maintain long-term
+audience retention and better subscriber growth potential.
+
+4. Monthly trend analysis shows spikes during seasonal periods,
+which can help optimize content publishing schedules.
+
+5. Videos with higher likes-to-view ratios tend to sustain trending
+positions for longer durations.
+
+6. Engagement metrics such as likes and comments are stronger
+performance indicators than views alone.
+
+7. High-performing channels consistently publish content in
+top-performing categories.
+
+8. Trend drop analysis helps identify declining audience interest,
+allowing businesses to react quickly.
+
+9. Running totals and moving averages provide better strategic
+visibility for long-term growth forecasting.
+
+10. Query optimization using INDEX improves analytical reporting
+performance in large-scale datasets.
+*/
+
+-- =====================================================
+-- BUSINESS RECOMMENDATIONS
+-- =====================================================
+
+/*
+1. Focus content production on high-performing categories
+such as Music and Entertainment.
+
+2. Increase audience engagement strategies including
+community interaction, comments, and live engagement.
+
+3. Publish videos during high-traffic seasonal periods
+identified through trend analytics.
+
+4. Use engagement rate as a KPI instead of relying only on views.
+
+5. Build executive dashboards for real-time business monitoring.
+
+6. Implement automated alerts using triggers and procedures
+for abnormal trend drops.
+
+7. Optimize SQL infrastructure using indexing and views
+for faster reporting performance.
+
+8. Track competitor channel performance regularly to identify
+market opportunities.
+
+9. Use moving averages and growth analytics to forecast
+future content performance.
+
+10. Create retention-focused content strategies to maximize
+long-term audience growth.
+*/
+
