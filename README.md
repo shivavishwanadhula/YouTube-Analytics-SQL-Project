@@ -1,4 +1,4 @@
-# YouTube-Analytics-SQL-Project
+# YouTube Trending Video Analytics Using SQL
 End-to-end YouTube trending data analysis using MySQL — 40 queries covering data cleaning, KPI reporting, window functions, stored procedures and triggers.
 
 
